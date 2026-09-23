@@ -1,0 +1,8 @@
+{
+  "kind": "dependency",
+  "batches": [{"batch_id": "b1", "item_ids": ["A", "B"], "cuts": [{"item_id": "A", "field": "body", "mid_sentence": true}]}],
+  "results": [[
+    {"abstained": false, "findings": [{"finding_id": "d1", "blocking_item_id": "A", "blocked_item_id": "B", "basis": "stated", "citation": "B needs A", "inference_rationale": null}]},
+    {"abstained": false, "findings": [{"finding_id": "d2", "blocking_item_id": "A", "blocked_item_id": "B", "basis": "inferred", "citation": null, "inference_rationale": "A supplies the prerequisite"}]}
+  ]]
+}

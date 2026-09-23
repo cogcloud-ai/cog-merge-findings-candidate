@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "cog-rank-next-up input",
+  "description": "The items, the dependency findings, the classifications and the ranking policy. Declared from the manifest as context.input_schema. This Cog reaches nothing: it is invoked with no grant.",
+  "type": "object",
+  "required": ["items", "ranking_policy"],
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "type": "array",
+      "description": "The github-items artifact's items. Closed-context items are read and ignored: they are duplicate-detection context and are never ranked.",
+      "items": {
+        "type": "object",
+        "required": ["item_id", "created_at", "is_closed_context"],
+        "properties": {
+          "item_id": {"type": "string", "minLength": 1},
+          "created_at": {"type": "string"},
+          "is_closed_context": {"type": "boolean"},
+          "state": {"enum": ["open", "closed"]},
+          "title": {"type": "string"}
+        }
+      }
+    },
+    "dependency_findings": {
+      "type": ["object", "null"],
+      "description": "openteams/cog-dependency-detector's payload, or null when that step was skipped. Only `stated` findings move an item; `inferred` ones are advisory.",
+      "properties": {
+        "abstained": {"type": "boolean"},
+        "findings": {"type": "array", "items": {"type": "object"}}
+      }
+    },
+    "classifications": {
+      "type": ["array", "null"],
+      "description": "The classify-items foreach step's payload: one openteams/cog-issue-classifier payload per item, null where that element failed its Gate. An item with no classification is unrated.",
+      "items": {"type": ["object", "null"]}
+    },
+    "ranking_policy": {
+      "type": "object",
+      "description": "The ranking-policy artifact. `priority_order` overrides the default P0, P1, P2, P3, unrated, so the team can change the policy without touching this Cog.",
+      "required": ["precedence"],
+      "properties": {
+        "policy_id": {"type": "string"},
+        "precedence": {"type": "array"},
+        "priority_order": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1}
+      }
+    }
+  }
+}

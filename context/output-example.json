@@ -1,0 +1,12 @@
+{
+  "abstained": false,
+  "findings": [{"finding_id": "m-1", "blocking_item_id": "A", "blocked_item_id": "B", "basis": "stated", "citation": "B needs A", "inference_rationale": null}],
+  "provenance": [{
+    "finding_id": "m-1", "support": 1, "of": 2,
+    "occurrences": [{"batch_id": "b1", "repeat": 0}],
+    "source_finding_ids": [{"batch_id": "b1", "repeat": 0, "source_finding_id": "d1"}, {"batch_id": "b1", "repeat": 1, "source_finding_id": "d2"}],
+    "cut_item_ids": ["A"],
+    "also_inferred": {"count": 1, "rationale": "A supplies the prerequisite", "sources": [{"batch_id": "b1", "repeat": 1, "source_finding_id": "d2"}]}
+  }],
+  "authority_use": []
+}

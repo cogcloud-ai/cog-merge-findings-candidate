@@ -1,0 +1,485 @@
+{
+  "contract": {
+    "kind": "code",
+    "purpose": "Deterministically merge one detector kind's findings (overlap or dependency) across batches and repeats into one payload in the detector's own {abstained, findings} shape. Findings are renumbered m-1..m-n. Provenance sits beside them with observation-frequency support, accepted-answer counts, qualified source references, cut item ids and stated-wins also_inferred evidence. authority_use is always []. The unit of work is the consolidation step between the detector fan-out (batches x repeats) and the downstream consumers (cog-rank-next-up, cog-compose-proposals, human review). Detector pipelines can reuse it for either kind. Independent validation lives outside this Cog: the Op runner's per-repeat Gate (which turns a failed repeat into null), host schema validation of this step's input and output, the downstream Op Gates, and human review. The detectors' own package contract checks are not independent Guards, and neither are this Cog's own check_input, check_output and tests, which are package checks and not acceptance. Support is observation frequency across repeats, not truth or probability. Stated-wins is a declared merge policy, not proof that the stated citation is correct. This is a fresh candidate implementation with cog-merge-findings as behavioral reference only, and it is not an automatic replacement.",
+    "user": "A triage-pipeline Op runner that fans detectors out over batches and repeats, the downstream consumers cog-rank-next-up and cog-compose-proposals, and the human reviewers and Gates that read the merged result.",
+    "supported_work": [
+      "Key each finding by relationship and value. Overlap uses the sorted item-id set with value `relationship`. Dependency uses the ordered (blocking, blocked) pair with value `basis`. Identical keys merge across repeats and batches. The kept text has the most citations, then the longest verbatim citation, then the earliest batch and repeat.",
+      "Compute support by de-duplicating occurrences by (batch_id, repeat), so a repeat that numbers one relationship twice counts once while every occurrence still competes for the best text. Compute `of` as the count of accepted answers (non-null, readable payloads) that saw every item the finding names. Null repeats and unreadable payloads are not answers, so repeat lists of different lengths work and support never exceeds `of`.",
+      "Keep one relationship described with different values once per value, and report a warn problem `findings-disagree`, without adjudicating. This includes overlap duplicate versus overlap.",
+      "Apply stated-wins to dependency edges only. A stated and an inferred occurrence of the same ordered edge become one stated finding. The inferred occurrences fold into provenance.also_inferred {count, rationale (longest, then earliest), sources [{batch_id, repeat, source_finding_id}]}. Support counts stated repeats only. The folded references also appear in source_finding_ids. also_inferred is absent unless something was folded, and this case is not a findings-disagree problem.",
+      "Renumber merged findings m-1..m-n in key order, so ids and key order are stable across runs and batch arrival order. Emit source_finding_ids sorted, de-duplicated, non-empty, and qualified as {batch_id, repeat, source_finding_id}.",
+      "Emit cut_item_ids always: the finding's own item_ids intersected with the union of cuts over the batches in that finding's occurrences, sorted and de-duplicated. Read only item ids from cut records, ignore unknown keys, and treat a missing cuts key as no cuts.",
+      "Drop a finding that names an item outside its own batch and report an error problem. Report a repeat payload that is not a valid detector payload as `result-shape` and skip it without failing the step. Drop nothing for low support.",
+      "Set abstained true only if every accepted (non-null, readable) result abstained. Report a warn problem `no-results` when there are no accepted answers. Validate the merged {abstained, findings} against the embedded detector output schema for the run's kind, and report contract-check problems. ok:true may carry problems."
+    ],
+    "unsupported_work": [
+      "Judgment beyond the declared stated-wins policy: deciding which of two disagreeing values is right, weighing support against a threshold, or dropping findings for low support.",
+      "Treating support as truth, probability or confidence. It is observation frequency only. Treating stated-wins as proof that the stated citation is correct or the better explanation.",
+      "Inventing, rewriting or synthesizing findings, citations or rationales. All text is copied verbatim from a supplied detector finding.",
+      "Merging across kinds. One invocation merges one detector kind.",
+      "Building or running detectors, model calls, network access, subprocesses, file or other external effects, grants or journals, and any new infrastructure.",
+      "Editing, copying or replacing the unchanged cog-merge-findings reference, or importing any third-party dependency beyond the standard library, pyyaml and jsonschema that the machinery already supplies.",
+      "Acting as an independent Guard, Gate or acceptance authority. Downstream Op Gates and human review decide."
+    ],
+    "input_schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "One detector's results across batches and repeats, exactly as the Op runner produces them. Narrowing contract (2026-09-20) \u00a73; the repeat shape is \u00a72.",
+      "properties": {
+        "batches": {
+          "description": "the batches the detector ran over, in the runner's foreach order \u2014 `results[i]` belongs to `batches[i]`. cog-candidate-pairs' `batches`, projected to the two fields merging needs.",
+          "items": {
+            "additionalProperties": true,
+            "properties": {
+              "batch_id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "cuts": {
+                "description": "cog-candidate-pairs' record of what this batch's copies of these items no longer carry (narrowing contract \u00a710, \"making a cut visible to the human\"). Read for the item ids alone: a finding found in a batch that cut one of its items is reported with `cut_item_ids` beside it, so the human checks the original. Declared LOOSELY on purpose \u2014 the cutter owns this shape and extra keys (a `mid_sentence` flag, say) must travel here without a schema change.",
+                "items": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "field": {
+                      "description": "the field the cut consumed; not an enum here, because the cutter decides which fields it may cut",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "item_id": {
+                      "description": "the item this batch's copy shortened",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "item_id",
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "item_ids": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "batch_id",
+              "item_ids"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "description": "which detector produced these results; it decides the key a finding is merged on and the shape the merged payload must satisfy",
+          "enum": [
+            "overlap",
+            "dependency"
+          ]
+        },
+        "results": {
+          "description": "per batch, the LIST of the k repeat payloads, `null` for a repeat whose Gate failed (\u00a72). Shapes are checked per repeat by a contract check, not here: a malformed repeat is a named problem and is skipped, never a refused step.",
+          "items": {
+            "items": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "type": "array"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "batches",
+        "results"
+      ],
+      "title": "cog-merge-findings input",
+      "type": "object"
+    },
+    "output_schema": {
+      "$defs": {
+        "dependency_detector_output": {
+          "additionalProperties": false,
+          "description": "openteams/cog-dependency-detector's output schema, EMBEDDED VERBATIM (only `$schema`, which belongs to a document and not to a subschema, and this description differ). The merged payload is validated against the one matching `kind` by a contract check, so cog-rank-next-up and cog-compose-proposals read this Cog's result exactly as they read the detector's. tests/fixtures/ carries the byte-for-byte copy and a parity test against the sibling package.",
+          "properties": {
+            "abstained": {
+              "type": "boolean"
+            },
+            "findings": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "basis": {
+                    "enum": [
+                      "stated",
+                      "inferred"
+                    ]
+                  },
+                  "blocked_item_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "blocking_item_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "citation": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "finding_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "inference_rationale": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "finding_id",
+                  "blocked_item_id",
+                  "blocking_item_id",
+                  "basis",
+                  "citation",
+                  "inference_rationale"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "abstained",
+            "findings"
+          ],
+          "type": "object"
+        },
+        "overlap_detector_output": {
+          "additionalProperties": false,
+          "description": "openteams/cog-overlap-duplicate-detector's output schema, EMBEDDED VERBATIM (only `$schema`, which belongs to a document and not to a subschema, and this description differ). The merged payload is validated against the one matching `kind` by a contract check, so cog-rank-next-up and cog-compose-proposals read this Cog's result exactly as they read the detector's. tests/fixtures/ carries the byte-for-byte copy and a parity test against the sibling package.",
+          "properties": {
+            "abstained": {
+              "type": "boolean"
+            },
+            "findings": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "citations": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "item_id": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "passage": {
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "item_id",
+                        "passage"
+                      ],
+                      "type": "object"
+                    },
+                    "minItems": 2,
+                    "type": "array"
+                  },
+                  "finding_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "item_ids": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "minItems": 2,
+                    "type": "array"
+                  },
+                  "rationale": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "relationship": {
+                    "enum": [
+                      "duplicate",
+                      "overlap"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "finding_id",
+                  "item_ids",
+                  "relationship",
+                  "rationale",
+                  "citations"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "abstained",
+            "findings"
+          ],
+          "type": "object"
+        },
+        "source_reference": {
+          "additionalProperties": false,
+          "description": "one detector answer, named the only way it can be named uniquely: the batch, the repeat, and the finding id that answer gave it. Per-batch numbering collides \u2014 several batches reuse `finding-1` \u2014 so a bare id is not a reference.",
+          "properties": {
+            "batch_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "repeat": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source_finding_id": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "batch_id",
+            "repeat",
+            "source_finding_id"
+          ],
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "description": "ONE payload in the detector's own output shape, plus `provenance` beside it \u2014 so cog-rank-next-up and cog-compose-proposals read `abstained` and `findings` unchanged and ignore the rest (their findings schemas are open). `findings` is declared loosely HERE and strictly by a contract check against the embedded detector output schema for this run's `kind`, because one document cannot be two shapes at once.",
+      "properties": {
+        "abstained": {
+          "description": "true only if EVERY non-null result abstained",
+          "type": "boolean"
+        },
+        "authority_use": {
+          "description": "empty: this Cog reaches nothing",
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "findings": {
+          "description": "the merged findings, one per relationship and value, ordered by their key",
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "provenance": {
+          "description": "one entry per merged finding, in the same order. Nothing is dropped for low support: the contract checks already rejected fabrications and the human gate decides.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "also_inferred": {
+                "additionalProperties": false,
+                "description": "STATED WINS collapses the EDGE and keeps the folded evidence (narrowing contract \u00a715). A dependency edge found `stated` in one occurrence and `inferred` in another is ONE edge one repeat quoted and another only reasoned about, so the stated finding is the one reported \u2014 and this is what was folded into it. Present only on a dependency finding whose basis is `stated` and only when at least one inferred occurrence was folded in \u2014 absent otherwise, so an entry that carries it says something happened.",
+                "properties": {
+                  "count": {
+                    "description": "how many repeats reached the same edge WITHOUT a citation. Beside `support`, never inside it: `support` is the support for the STATED claim, which is the one reported.",
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "rationale": {
+                    "description": "the best inferred rationale that was folded in \u2014 the longest, then the earliest. Collapsing the edge never established that the stated citation was the better explanation, so the reasoning stays readable. Empty when the folded readings carried none.",
+                    "type": "string"
+                  },
+                  "sources": {
+                    "description": "where each folded reading came from, sorted and de-duplicated. A folded inferred finding appears nowhere else at all, so this is the only way back to it.",
+                    "items": {
+                      "$ref": "#/$defs/source_reference"
+                    },
+                    "minItems": 1,
+                    "type": "array",
+                    "uniqueItems": true
+                  }
+                },
+                "required": [
+                  "count",
+                  "rationale",
+                  "sources"
+                ],
+                "type": "object"
+              },
+              "cut_item_ids": {
+                "description": "The items OF THIS FINDING whose copy was shortened before the model read it, in a batch this finding was found in: the finding's item ids intersected with the union of `cuts` over the batches in `occurrences`, sorted and de-duplicated. ALWAYS present and empty when nothing was cut, so a consumer never branches on absence. cog-compose-proposals appends a sentence to a change's summary when this list is non-empty, so the human checks the original (narrowing contract \u00a710).",
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              "finding_id": {
+                "description": "the merged finding this describes. Merged findings are RENUMBERED m-1, m-2, \u2026 in output order: a detector numbers its findings per batch, so the same id names different relationships in different batches, and renumbering makes the ids unique by construction and \u2014 since the output order is the key order \u2014 stable across runs and across the order the batches arrived in. The ids the detector gave are kept in `source_finding_ids`.",
+                "minLength": 1,
+                "pattern": "^m-[1-9][0-9]*$",
+                "type": "string"
+              },
+              "occurrences": {
+                "description": "the batch and repeat ids it was found in, each (batch_id, repeat) once",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "batch_id": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "repeat": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "batch_id",
+                    "repeat"
+                  ],
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "of": {
+                "description": "how many ACCEPTED answers saw every item it names \u2014 the non-null, in-batch repeat payloads this Cog merged, not the asks that ran: `[null, null, clean]` is `of: 1`, not `of: 3` (Codex review 5, nit 2)",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "source_finding_ids": {
+                "description": "what the detector called this finding, in every batch and repeat that produced it \u2014 each id QUALIFIED by the (batch_id, repeat) that gave it, because several batches reuse `finding-1` and a bare id identifies nothing. Sorted and de-duplicated. The thread back from a merged finding to the detector's own answers, which the renumbering above would otherwise cut. When stated-wins folded an inferred reading of a dependency edge into its stated one, that reading's references are here too.",
+                "items": {
+                  "$ref": "#/$defs/source_reference"
+                },
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "support": {
+                "description": "how many distinct REPEATS found it \u2014 occurrences de-duplicated by (batch_id, repeat), so a repeat that numbers one relationship twice supported it once and support stays comparable with `of`",
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "finding_id",
+              "support",
+              "of",
+              "occurrences",
+              "source_finding_ids",
+              "cut_item_ids"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "abstained",
+        "findings",
+        "provenance",
+        "authority_use"
+      ],
+      "title": "cog-merge-findings output",
+      "type": "object"
+    },
+    "grounding": "Every merged finding is traceable to at least one supplied detector finding through provenance.source_finding_ids, qualified as {batch_id, repeat, source_finding_id}. All finding text (citations, rationale, basis, relationship) is copied verbatim from the kept source finding, and nothing is synthesized. Every item a merged finding names must belong to each batch in which it was found, otherwise the finding is dropped with an error problem. support and `of` are observation counts over accepted answers, not evidence of truth. Stated-wins is a declared policy and does not validate the stated citation. The merged payload validates against the detector output schema matching `kind`.",
+    "abstention": "The Cog never invents findings and does not abstain on judgment. Output `abstained` is true only if every accepted (non-null, readable) result abstained. With no accepted answers it is vacuously true and a warn problem `no-results` says so. A repeat payload that is not a valid detector payload is reported as `result-shape`, skipped, and not counted as an answer. Invalid input is reported by check_input problems rather than raised, and the step is not refused for per-repeat shape errors.",
+    "model_requirements": "none",
+    "locality": "local",
+    "prohibits": [
+      "model_calls",
+      "network_access",
+      "external_effects",
+      "adjudicating_disagreements_beyond_stated_wins",
+      "dropping_findings_for_low_support",
+      "inventing_findings",
+      "cross_kind_merging",
+      "building_detectors",
+      "modifying_cog_merge_findings",
+      "additional_third_party_dependencies"
+    ],
+    "acceptance_criteria": [
+      {
+        "id": "identical-merge-support",
+        "description": "Identical keys merge across repeats and batches, and the kept text is chosen by most citations, then longest verbatim citation, then earliest input batch and repeat. Deterministic tests cover each tie-break level. support de-duplicates by (batch_id, repeat): a repeat numbering one relationship twice gives support 1 while both occurrences still compete for text. support never exceeds `of` on any fixture."
+      },
+      {
+        "id": "of-accepted-answers",
+        "description": "`of` counts only accepted answers (non-null, valid detector payloads) from batches that contain every item the finding names. Tests show [null, null, clean] gives of 1, repeat lists of different lengths work, and null and unreadable payloads never inflate `of`."
+      },
+      {
+        "id": "key-policy",
+        "description": "Overlap findings merge on the sorted item-id set (order-insensitive) with value `relationship`. Dependency findings merge on the ordered (blocking, blocked) pair with value `basis`, so reversed edges never merge. Tests cover both. Under permutation of batch arrival order, the sequence of keys, and so the key-to-id mapping, is unchanged."
+      },
+      {
+        "id": "conflict-reporting",
+        "description": "One relationship with different values is kept once per value and reports a warn problem `findings-disagree`. An overlap duplicate-versus-overlap disagreement keeps its warning. Tests confirm no adjudication and no dropped value."
+      },
+      {
+        "id": "stated-wins",
+        "description": "For dependency only, a stated and an inferred occurrence of one ordered edge yield a single stated finding, with support counting stated repeats only. provenance.also_inferred carries {count, rationale (longest, then earliest), sources}, and the folded references also appear in source_finding_ids. also_inferred is absent unless something was folded, never has count 0 or empty sources, and this case reports no findings-disagree. Tests check that stated-wins does not apply to overlap."
+      },
+      {
+        "id": "renumber-and-sources",
+        "description": "Findings are renumbered m-1..m-n in key order with unique ids, and provenance has one entry per finding in the same order. Across permutations of batch arrival order, the ids and key order are identical for the same key. Kept text and occurrence ordering may differ only where the earliest-input tie-break applies, and no full-payload invariance is required. source_finding_ids is sorted, de-duplicated, non-empty and qualified as {batch_id, repeat, source_finding_id}."
+      },
+      {
+        "id": "cut-item-ids",
+        "description": "cut_item_ids is always present, is the finding's item_ids intersected with the union of cuts over only the batches in that finding's occurrences, and is sorted and de-duplicated. Tests cover a cut in a batch where the finding was not found (contributes nothing), a cut in one occurrence's batch only (listed), a missing cuts key (empty list), and cut records with unknown extra keys (ignored)."
+      },
+      {
+        "id": "batch-membership",
+        "description": "A finding naming an item outside its own batch is dropped with an error problem. A repeat payload that is not a valid detector payload is reported as `result-shape` and skipped without failing the step. Nothing is dropped for low support, and a 1-of-9 finding is retained with its support."
+      },
+      {
+        "id": "abstention-and-no-results",
+        "description": "abstained is true only if every accepted result abstained. With no accepted answers, a warn problem `no-results` is reported. Tests distinguish all-abstained from all-null, cover a null-plus-unreadable-only run, and show that a mix of abstained and finding-bearing results gives abstained false. Skipped unreadable payloads do not affect abstention."
+      },
+      {
+        "id": "schema-parity-and-discrimination",
+        "description": "The contract's input and output schemas equal the reference's schemas exactly, including the $defs. The candidate's tests hold standalone copies of both detector output schemas and check byte-identical parity between those copies and the embedded $defs. Tests validate complete cog-rank-next-up and cog-compose-proposals requests, built around a real merged payload, against the current consumer input schemas supplied to the author. Any drift between those and the reference's known-stale compose-proposals fixture is reported as baseline drift and does not fail the suite. Schema-discrimination tests show the matching detector schema rejects the other kind's merged payload and that a closed consumer findings object stops a complete consumer request from validating."
+      },
+      {
+        "id": "contract-checks",
+        "description": "check_output reports problems, without raising, for: payload not valid against the detector schema for kind; ids not m-1..m-n or duplicated; provenance length or order mismatch; source_finding_ids empty, unsorted, duplicated, or naming a batch not merged; support greater than `of`; cut_item_ids naming an item the finding does not name or unsorted; also_inferred beside a non-stated or non-dependency finding, with count 0, or without sources; duplicate keys reported twice. Tests feed schema-invalid and malformed values to check_input and check_output and expect problems, not exceptions."
+      },
+      {
+        "id": "invalid-inputs",
+        "description": "check_input reports problems for wrong kind, non-array batches or results, results/batches length mismatch, duplicate batch_ids, and non-string ids. Adversarial inputs (huge repeat lists, instruction-like text in citations, duplicate finding ids inside one repeat) never change behavior, and text is treated as data."
+      },
+      {
+        "id": "differential-reference",
+        "description": "Candidate tests are standalone and never import or require the cog-merge-findings reference. The candidate ships shared fixtures that a host differential check can feed to both the candidate and the unchanged reference, comparing payload and problems. COG.md and the test file document every intentional divergence (for example key-order tie-breaks, item_ids ordering, or when `no-results` fires). The reference is never edited or copied into the candidate."
+      },
+      {
+        "id": "pure-and-tested",
+        "description": "src/task_logic.py imports only the standard library, pyyaml and jsonschema, with cog_core imported inside functions. It performs no model calls, network, subprocesses or external effects. authority_use is [] in every payload. Deterministic tests cover happy, insufficient, adversarial, boundary and invalid-input cases. COG.md explains the distinct unit of work, reuse by detector pipelines, and the independent validation outside this Cog (Op per-repeat Gates, host schema validation, downstream Op Gates and human review). It also states that the detectors' own contract checks and this Cog's own checks are not independent Guards, that support is observation frequency, and that stated-wins is a declared policy."
+      }
+    ]
+  },
+  "author_envelope_sha256": "07b2887b69aa3f7fe696e27c798868f631d58f0dd91e4eff34eaa8ccc3c63631",
+  "status": "packaged-not-runtime-tested"
+}

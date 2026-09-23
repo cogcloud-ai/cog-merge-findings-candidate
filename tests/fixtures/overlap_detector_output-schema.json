@@ -1,0 +1,75 @@
+{
+  "additionalProperties": false,
+  "description": "openteams/cog-overlap-duplicate-detector's output schema, EMBEDDED VERBATIM (only `$schema`, which belongs to a document and not to a subschema, and this description differ). The merged payload is validated against the one matching `kind` by a contract check, so cog-rank-next-up and cog-compose-proposals read this Cog's result exactly as they read the detector's. tests/fixtures/ carries the byte-for-byte copy and a parity test against the sibling package.",
+  "properties": {
+    "abstained": {
+      "type": "boolean"
+    },
+    "findings": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "citations": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "item_id": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "passage": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "item_id",
+                "passage"
+              ],
+              "type": "object"
+            },
+            "minItems": 2,
+            "type": "array"
+          },
+          "finding_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "item_ids": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 2,
+            "type": "array"
+          },
+          "rationale": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "relationship": {
+            "enum": [
+              "duplicate",
+              "overlap"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "finding_id",
+          "item_ids",
+          "relationship",
+          "rationale",
+          "citations"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "abstained",
+    "findings"
+  ],
+  "type": "object"
+}

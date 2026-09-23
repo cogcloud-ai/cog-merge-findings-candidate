@@ -1,0 +1,300 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "cog-merge-findings output",
+  "description": "ONE payload in the detector's own output shape, plus `provenance` beside it — so cog-rank-next-up and cog-compose-proposals read `abstained` and `findings` unchanged and ignore the rest (their findings schemas are open). `findings` is declared loosely HERE and strictly by a contract check against the embedded detector output schema for this run's `kind`, because one document cannot be two shapes at once.",
+  "type": "object",
+  "required": [
+    "abstained",
+    "findings",
+    "provenance",
+    "authority_use"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "overlap_detector_output": {
+      "additionalProperties": false,
+      "properties": {
+        "abstained": {
+          "type": "boolean"
+        },
+        "findings": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "citations": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "item_id": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "passage": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "item_id",
+                    "passage"
+                  ],
+                  "type": "object"
+                },
+                "minItems": 2,
+                "type": "array"
+              },
+              "finding_id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "item_ids": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "minItems": 2,
+                "type": "array"
+              },
+              "rationale": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "relationship": {
+                "enum": [
+                  "duplicate",
+                  "overlap"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "finding_id",
+              "item_ids",
+              "relationship",
+              "rationale",
+              "citations"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "abstained",
+        "findings"
+      ],
+      "type": "object",
+      "description": "openteams/cog-overlap-duplicate-detector's output schema, EMBEDDED VERBATIM (only `$schema`, which belongs to a document and not to a subschema, and this description differ). The merged payload is validated against the one matching `kind` by a contract check, so cog-rank-next-up and cog-compose-proposals read this Cog's result exactly as they read the detector's. tests/fixtures/ carries the byte-for-byte copy and a parity test against the sibling package."
+    },
+    "dependency_detector_output": {
+      "additionalProperties": false,
+      "properties": {
+        "abstained": {
+          "type": "boolean"
+        },
+        "findings": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "basis": {
+                "enum": [
+                  "stated",
+                  "inferred"
+                ]
+              },
+              "blocked_item_id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "blocking_item_id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "citation": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "finding_id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "inference_rationale": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "finding_id",
+              "blocked_item_id",
+              "blocking_item_id",
+              "basis",
+              "citation",
+              "inference_rationale"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "abstained",
+        "findings"
+      ],
+      "type": "object",
+      "description": "openteams/cog-dependency-detector's output schema, EMBEDDED VERBATIM (only `$schema`, which belongs to a document and not to a subschema, and this description differ). The merged payload is validated against the one matching `kind` by a contract check, so cog-rank-next-up and cog-compose-proposals read this Cog's result exactly as they read the detector's. tests/fixtures/ carries the byte-for-byte copy and a parity test against the sibling package."
+    },
+    "source_reference": {
+      "type": "object",
+      "required": [
+        "batch_id",
+        "repeat",
+        "source_finding_id"
+      ],
+      "additionalProperties": false,
+      "description": "one detector answer, named the only way it can be named uniquely: the batch, the repeat, and the finding id that answer gave it. Per-batch numbering collides — several batches reuse `finding-1` — so a bare id is not a reference.",
+      "properties": {
+        "batch_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repeat": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_finding_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "properties": {
+    "abstained": {
+      "type": "boolean",
+      "description": "true only if EVERY non-null result abstained"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "description": "the merged findings, one per relationship and value, ordered by their key"
+    },
+    "provenance": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "finding_id",
+          "support",
+          "of",
+          "occurrences",
+          "source_finding_ids",
+          "cut_item_ids"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "finding_id": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^m-[1-9][0-9]*$",
+            "description": "the merged finding this describes. Merged findings are RENUMBERED m-1, m-2, … in output order: a detector numbers its findings per batch, so the same id names different relationships in different batches, and renumbering makes the ids unique by construction and — since the output order is the key order — stable across runs and across the order the batches arrived in. The ids the detector gave are kept in `source_finding_ids`."
+          },
+          "source_finding_ids": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "description": "what the detector called this finding, in every batch and repeat that produced it — each id QUALIFIED by the (batch_id, repeat) that gave it, because several batches reuse `finding-1` and a bare id identifies nothing. Sorted and de-duplicated. The thread back from a merged finding to the detector's own answers, which the renumbering above would otherwise cut. When stated-wins folded an inferred reading of a dependency edge into its stated one, that reading's references are here too.",
+            "items": {
+              "$ref": "#/$defs/source_reference"
+            }
+          },
+          "also_inferred": {
+            "type": "object",
+            "required": [
+              "count",
+              "rationale",
+              "sources"
+            ],
+            "additionalProperties": false,
+            "description": "STATED WINS collapses the EDGE and keeps the folded evidence (narrowing contract §15). A dependency edge found `stated` in one occurrence and `inferred` in another is ONE edge one repeat quoted and another only reasoned about, so the stated finding is the one reported — and this is what was folded into it. Present only on a dependency finding whose basis is `stated` and only when at least one inferred occurrence was folded in — absent otherwise, so an entry that carries it says something happened.",
+            "properties": {
+              "count": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "how many repeats reached the same edge WITHOUT a citation. Beside `support`, never inside it: `support` is the support for the STATED claim, which is the one reported."
+              },
+              "rationale": {
+                "type": "string",
+                "description": "the best inferred rationale that was folded in — the longest, then the earliest. Collapsing the edge never established that the stated citation was the better explanation, so the reasoning stays readable. Empty when the folded readings carried none."
+              },
+              "sources": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "description": "where each folded reading came from, sorted and de-duplicated. A folded inferred finding appears nowhere else at all, so this is the only way back to it.",
+                "items": {
+                  "$ref": "#/$defs/source_reference"
+                }
+              }
+            }
+          },
+          "support": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "how many distinct REPEATS found it — occurrences de-duplicated by (batch_id, repeat), so a repeat that numbers one relationship twice supported it once and support stays comparable with `of`"
+          },
+          "of": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "how many ACCEPTED answers saw every item it names — the non-null, in-batch repeat payloads this Cog merged, not the asks that ran: `[null, null, clean]` is `of: 1`, not `of: 3` (Codex review 5, nit 2)"
+          },
+          "occurrences": {
+            "type": "array",
+            "minItems": 1,
+            "description": "the batch and repeat ids it was found in, each (batch_id, repeat) once",
+            "items": {
+              "type": "object",
+              "required": [
+                "batch_id",
+                "repeat"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "batch_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "repeat": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          },
+          "cut_item_ids": {
+            "type": "array",
+            "description": "The items OF THIS FINDING whose copy was shortened before the model read it, in a batch this finding was found in: the finding's item ids intersected with the union of `cuts` over the batches in `occurrences`, sorted and de-duplicated. ALWAYS present and empty when nothing was cut, so a consumer never branches on absence. cog-compose-proposals appends a sentence to a change's summary when this list is non-empty, so the human checks the original (narrowing contract §10).",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "description": "one entry per merged finding, in the same order. Nothing is dropped for low support: the contract checks already rejected fabrications and the human gate decides."
+    },
+    "authority_use": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "description": "empty: this Cog reaches nothing"
+    }
+  }
+}

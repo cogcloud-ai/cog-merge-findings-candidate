@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "cog-merge-findings input",
+  "description": "One detector's results across batches and repeats, exactly as the Op runner produces them. Narrowing contract (2026-09-20) \u00a73; the repeat shape is \u00a72.",
+  "type": "object",
+  "required": [
+    "kind",
+    "batches",
+    "results"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "enum": [
+        "overlap",
+        "dependency"
+      ],
+      "description": "which detector produced these results; it decides the key a finding is merged on and the shape the merged payload must satisfy"
+    },
+    "batches": {
+      "type": "array",
+      "description": "the batches the detector ran over, in the runner's foreach order \u2014 `results[i]` belongs to `batches[i]`. cog-candidate-pairs' `batches`, projected to the two fields merging needs.",
+      "items": {
+        "type": "object",
+        "required": [
+          "batch_id",
+          "item_ids"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "item_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "cuts": {
+            "type": "array",
+            "description": "cog-candidate-pairs' record of what this batch's copies of these items no longer carry (narrowing contract §10, \"making a cut visible to the human\"). Read for the item ids alone: a finding found in a batch that cut one of its items is reported with `cut_item_ids` beside it, so the human checks the original. Declared LOOSELY on purpose — the cutter owns this shape and extra keys (a `mid_sentence` flag, say) must travel here without a schema change.",
+            "items": {
+              "type": "object",
+              "required": [
+                "item_id",
+                "field"
+              ],
+              "additionalProperties": true,
+              "properties": {
+                "item_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "the item this batch's copy shortened"
+                },
+                "field": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "the field the cut consumed; not an enum here, because the cutter decides which fields it may cut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "results": {
+      "type": "array",
+      "description": "per batch, the LIST of the k repeat payloads, `null` for a repeat whose Gate failed (\u00a72). Shapes are checked per repeat by a contract check, not here: a malformed repeat is a named problem and is skipped, never a refused step.",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "additionalProperties": false,
+  "description": "openteams/cog-dependency-detector's output schema, EMBEDDED VERBATIM (only `$schema`, which belongs to a document and not to a subschema, and this description differ). The merged payload is validated against the one matching `kind` by a contract check, so cog-rank-next-up and cog-compose-proposals read this Cog's result exactly as they read the detector's. tests/fixtures/ carries the byte-for-byte copy and a parity test against the sibling package.",
+  "properties": {
+    "abstained": {
+      "type": "boolean"
+    },
+    "findings": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "basis": {
+            "enum": [
+              "stated",
+              "inferred"
+            ]
+          },
+          "blocked_item_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "blocking_item_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "citation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finding_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "inference_rationale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "finding_id",
+          "blocked_item_id",
+          "blocking_item_id",
+          "basis",
+          "citation",
+          "inference_rationale"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "abstained",
+    "findings"
+  ],
+  "type": "object"
+}

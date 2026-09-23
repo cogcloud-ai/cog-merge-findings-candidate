@@ -1,0 +1,285 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "cog-compose-proposals input",
+  "description": "The items and everything the judgment Cogs found, plus the next-up list that decides the order a human reviews the proposals in. Declared from the manifest as context.input_schema. This Cog reaches nothing: it is invoked with no grant.",
+  "type": "object",
+  "required": [
+    "items"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "items": {
+      "type": "array",
+      "description": "The github-items artifact's items. A closed-context item is evidence for a duplicate claim and is never a proposal's target.",
+      "items": {
+        "type": "object",
+        "required": [
+          "item_id",
+          "repo",
+          "content_hash",
+          "is_closed_context"
+        ],
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "repo": {
+            "type": "string",
+            "minLength": 1
+          },
+          "number": {
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "issue",
+              "pull_request"
+            ],
+            "description": "Issue or pull request. Read to suppress a link between an issue and the pull request that closes it."
+          },
+          "title": {
+            "type": "string"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "comments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every comment body on the item, as cog-read-github read them. Read for ONE question: does the item already carry a comment marked with a link's change_id — `<!-- op-project-triage change:<id> … -->`, any run, either marker format? If it does, that link is already stated there and is skipped `already-satisfied` rather than proposed again (narrowing contract §16). Absent reads as no comments, which proposes exactly as before."
+          },
+          "linked_item_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every item id this item references, as cog-read-github normalized them: title, body, comments and reviews. A REFERENCE, not a closure \u2014 'Related to #10, but does not fix it' puts #10 here. Suppression reads closing_item_ids instead (contract \u00a711b)."
+          },
+          "state": {
+            "enum": [
+              "open",
+              "closed"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "content_hash": {
+            "type": "string",
+            "minLength": 1
+          },
+          "is_closed_context": {
+            "type": "boolean"
+          },
+          "closing_item_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The issues a PULL REQUEST declares it closes: GitHub's own closingIssuesReferences, read to the last page, and nothing else \u2014 no text anywhere makes a closure (contract \u00a711c). An issue always states []. This \u2014 and only this \u2014 is what suppresses a link between an issue and its closing pull request."
+          }
+        }
+      }
+    },
+    "overlap_findings": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "openteams/cog-overlap-duplicate-detector's payload, or null when that step was skipped.",
+      "properties": {
+        "abstained": {
+          "type": "boolean"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "dependency_findings": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "openteams/cog-dependency-detector's payload, or null when that step was skipped. Only `stated` dependencies are proposed; inferred ones are advisory and live in the next-up list.",
+      "properties": {
+        "abstained": {
+          "type": "boolean"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "overlap_provenance": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "description": "openteams/cog-merge-findings' `provenance` from the merge-overlaps step, or absent/null when the findings did not come through a merge. Read for `cut_item_ids` alone: where a finding rests on an item cog-candidate-pairs shortened to fit a batch, the change's summary says so and its change id moves (narrowing contract §10). Declared loosely — an entry this Cog cannot fully read is still an entry.",
+      "items": {
+        "type": "object",
+        "required": [
+          "finding_id"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "finding_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the merged overlap finding this describes"
+          },
+          "cut_item_ids": {
+            "type": "array",
+            "description": "the items OF THAT FINDING that were shortened in a batch it was found in, sorted and de-duplicated; empty when nothing was cut",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "dependency_provenance": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "description": "openteams/cog-merge-findings' `provenance` from the merge-dependencies step, or absent/null. Same element shape and the same use as `overlap_provenance`, for the dependency findings.",
+      "items": {
+        "type": "object",
+        "required": [
+          "finding_id"
+        ],
+        "additionalProperties": true,
+        "properties": {
+          "finding_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "the merged dependency finding this describes"
+          },
+          "cut_item_ids": {
+            "type": "array",
+            "description": "the items OF THAT FINDING that were shortened in a batch it was found in, sorted and de-duplicated; empty when nothing was cut",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "classifications": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "description": "The classify-items foreach step's payload: one openteams/cog-issue-classifier payload per item, null where that element failed.",
+      "items": {
+        "type": [
+          "object",
+          "null"
+        ]
+      }
+    },
+    "next_up_list": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "openteams/cog-rank-next-up's payload. Used only to order the proposals, so the human reviews what is next first.",
+      "properties": {
+        "ordered_entries": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "label_map": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Which rubric value becomes which EXISTING label, per repository, and where this Op may propose at all: `inputs/label-map.draft.json`'s `repositories` object, passed in as an Op input so nothing here hard-codes it (narrowing contract §5). A label change is proposed only when the item's repository has `write: true` AND the rubric value maps to a non-null label, and the change's payload carries that exact label beside the kind and value it came from. Links follow the same `write` flag. Everything else is `skipped` with `repository-not-writable` or `report-only`. An absent map proposes NOTHING: the map is the only thing that says a repository is writable. This replaces the `type:`/`area:`/`priority:` namespaces, which this Cog no longer knows about.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "write": {
+            "type": "boolean",
+            "description": "Exactly `true` admits proposals in this repository — labels and link comments alike. Anything else, including an absent flag, is report only."
+          },
+          "type": {
+            "type": "object",
+            "description": "rubric type value -> an existing label in this repository, or null for report only.",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "area": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "priority": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The team's own notes about this repository's label vocabulary. Read by people, never by this Cog."
+          }
+        }
+      }
+    },
+    "closing_references": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "cog-read-github's meta.closing_references: `complete` or `incomplete` per repository. Where it is `incomplete`, closure is UNKNOWN rather than absent: nothing is suppressed there and the proposal's summary says so. Absent means complete.",
+      "additionalProperties": {
+        "enum": [
+          "complete",
+          "incomplete"
+        ]
+      }
+    },
+    "marker_prefix": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "description": "The prefix cog-write-github marks its comments with, so a link this Op has already commented is recognised here and never proposed again. Defaults to `op-project-triage`, and must be the same value the writer's bundle carries (narrowing contract §16)."
+    }
+  }
+}
