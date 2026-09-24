@@ -10,7 +10,7 @@ license: Apache-2.0
 
 # cog-merge-findings-candidate
 
-This pure code Cog consolidates one detector kind's batch-and-repeat results. It is the reusable consolidation step between detector fan-out and cog-rank-next-up, cog-compose-proposals, and human review. It is a fresh candidate, not an automatic replacement for cog-merge-findings. The reference implementation is neither included nor imported.
+This pure code Cog consolidates one detector kind's batch-and-repeat results. It is the reusable consolidation step between detector fan-out and the downstream consumers (a ranking Cog, a proposal-composing Cog, and human review) of the triage pipeline it was built for. It is a fresh candidate, not an automatic replacement for the earlier internal merge implementation it was measured against (the reference below). The reference implementation is neither included nor imported. The detector Cogs, the consumer Cogs and the reference are not part of this suite: their output and input schemas are vendored byte-for-byte as fixtures under `tests/fixtures/`, and the accepted contract (`BUILD-HANDOFF.json`) and the schema descriptions name those Cogs as they were named in that pipeline. Nothing beyond this package is needed to run its tests.
 
 The task is `run(bundle, grant, journal)`, returning `(payload, problems)`. The host invokes run with `--bundle`; the host owns the execution envelope. The payload contains abstained, findings, provenance, and authority_use. Model requirements are none, locality is local, reaches is empty, authority_use is always [], and grant and journal are unused. Runtime work is bounded by the supplied finite input; it performs no I/O. The supplied jsonschema dependency validates in-memory data; no additional dependencies are needed.
 

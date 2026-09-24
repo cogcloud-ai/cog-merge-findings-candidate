@@ -17,6 +17,10 @@ pixi run test
 The original generated source and task logic are preserved. BUILD-HANDOFF.json
 contains the accepted build contract and source handoff, not provider credentials
 or a record of release acceptance. Tests use synthetic detector findings.
+The detector output schemas and consumer input schemas under `tests/fixtures/`
+are vendored copies from the pipeline this Cog was built for; the Cogs that
+produce and consume those documents, and the reference implementation, are
+not part of the suite and are not needed to run the tests.
 
 Copyright 2026 OpenTeams. Licensed under [Apache-2.0](LICENSE), matching the
 candidate's original manifest declaration.
